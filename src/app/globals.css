@@ -38,3 +38,39 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
 }
+
+/* Animaciones para la cinta transportadora */
+@keyframes slide {
+  0% {
+    left: 0%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+@keyframes slideConveyor {
+  0% {
+    transform: translateX(0) translateY(-50%);
+  }
+  100% {
+    transform: translateX(30px) translateY(-50%);
+  }
+}
+
+@keyframes slideRollers {
+  0% {
+    transform: translateX(0) translateY(-50%);
+  }
+  100% {
+    transform: translateX(40px) translateY(-50%);
+  }
+}
+
+.delay-500 {
+  animation-delay: 0.5s;
+}
+
+.duration-2000 {
+  transition-duration: 2000ms;
+}

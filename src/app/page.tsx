@@ -159,6 +159,165 @@ function MetricCard({ label, value, unit, icon }: { label: string; value: number
 }
 
 /**
+ * Componente: Simulación Gráfica de la Máquina
+ */
+function MachineSimulation({ state }: { state: MachineState }) {
+  // Determinar posición de la botella según el estado
+  const getBottlePosition = () => {
+    if (state.ESTADO === 'BUSCANDO_BOTELLA' || state.ESTADO === 'TRANSPORTANDO') {
+      return 'left-[200px]'; // Inicio de la cinta
+    } else if (state.ESTADO === 'BOTELLA_DETECTADA') {
+      return 'left-[400px]'; // Animación moviéndose por la cinta
+    } else if (state.ESTADO === 'LLENANDO' || state.ESTADO === 'BOTELLA_LLENA') {
+      return 'left-[500px]'; // Posición de llenado (más cerca del final)
+    }
+    return 'left-[500px]'; // Por defecto
+  };
+
+  const bottleInConveyor = state.ESTADO === 'BUSCANDO_BOTELLA' || state.ESTADO === 'TRANSPORTANDO';
+  const bottleMoving = state.ESTADO === 'BOTELLA_DETECTADA';
+  const bottleFilling = state.ESTADO === 'LLENANDO' || state.ESTADO === 'BOTELLA_LLENA';
+  const showBottle = state.S_BOTELLA === 1 || bottleInConveyor;
+
+  return (
+    <div className="bg-gray-800 rounded-xl p-8 shadow-2xl border border-gray-700">
+      <h2 className="text-2xl font-bold mb-6 text-center">Simulación de la Planta</h2>
+      
+      <div className="relative h-96 bg-gray-900 rounded-lg overflow-hidden">
+        {/* Tanque */}
+        <div className="absolute left-8 top-8 w-32 h-48 border-4 border-gray-600 rounded-lg bg-gray-800">
+          <div className="absolute bottom-0 w-full bg-blue-400 transition-all duration-500 rounded-b-lg" 
+               style={{ height: `${state.TANQUE}%` }}>
+          </div>
+          <div className="absolute top-2 left-2 text-xs text-gray-400">TANQUE</div>
+          <div className="absolute bottom-2 right-2 text-sm font-bold text-white">{state.TANQUE}%</div>
+        </div>
+
+        {/* Tubería desde tanque a bomba */}
+        <div className={`absolute left-28 top-56 w-1 h-12 ${state.M_BOMBA === 1 ? 'bg-blue-400' : 'bg-gray-600'} transition-colors`}></div>
+
+        {/* Bomba */}
+        <div className={`absolute left-20 top-64 w-16 h-16 rounded-full border-4 ${
+          state.M_BOMBA === 1 ? 'border-blue-500 bg-blue-500/20' : 'border-gray-600 bg-gray-800'
+        } flex items-center justify-center transition-all`}>
+          <span className="text-2xl">{state.M_BOMBA === 1 ? '💧' : '⭕'}</span>
+          {state.M_BOMBA === 1 && (
+            <div className="absolute inset-0 rounded-full border-4 border-blue-400 animate-ping"></div>
+          )}
+        </div>
+        <div className="absolute left-14 top-80 text-xs text-gray-400">BOMBA</div>
+
+        {/* Tubería desde bomba a zona de llenado */}
+        <div className={`absolute left-36 top-72 w-48 h-1 ${state.M_BOMBA === 1 && state.S_BOTELLA === 1 ? 'bg-blue-400' : 'bg-gray-600'} transition-colors`}></div>
+        
+        {/* Pico de llenado */}
+        <div className="absolute left-[500px] top-[272px] w-2 h-8 bg-gray-500 rounded-b">
+          {state.M_BOMBA === 1 && bottleFilling && (
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-1 h-12 bg-blue-400 animate-pulse"></div>
+          )}
+        </div>
+
+        {/* Cinta transportadora - Más larga */}
+        <div className="absolute left-48 bottom-8 w-[500px] h-5 bg-gray-700 rounded-lg border-2 border-gray-600">
+          {/* Animación de movimiento de la cinta */}
+          {(state.M_CINTA === 1 || bottleInConveyor) && (
+            <>
+              {/* Líneas de movimiento */}
+              <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
+                <div className="absolute top-1/2 transform -translate-y-1/2 w-full h-0.5 bg-gradient-to-r from-transparent via-gray-400 to-transparent animate-[slideConveyor_1s_linear_infinite]"></div>
+                <div className="absolute top-1/2 transform -translate-y-1/2 w-full h-0.5 bg-gradient-to-r from-transparent via-gray-400 to-transparent animate-[slideConveyor_1s_linear_infinite] delay-500"></div>
+              </div>
+              {/* Rodillos animados */}
+              <div className="absolute top-1/2 transform -translate-y-1/2 flex gap-8 animate-[slideRollers_1.5s_linear_infinite]">
+                {[...Array(20)].map((_, i) => (
+                  <div key={i} className="w-1 h-1 bg-yellow-500 rounded-full"></div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="absolute left-96 bottom-1 text-xs text-gray-400">CINTA TRANSPORTADORA</div>
+
+        {/* Botella - Posición dinámica y tamaño mejorado */}
+        {showBottle && (
+          <div className={`absolute bottom-[42px] transition-all ${
+            bottleMoving ? 'duration-2000' : 'duration-500'
+          } ${getBottlePosition()}`}>
+            {bottleFilling ? (
+              // Botella grande durante llenado
+              <div className="relative w-16 h-24">
+                {/* Cuerpo de la botella */}
+                <div className="absolute bottom-0 w-16 h-20 bg-gradient-to-b from-gray-200/30 to-gray-300/60 border-3 border-gray-400 rounded-b-xl backdrop-blur-sm"></div>
+                {/* Cuello */}
+                <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-5 h-6 bg-gradient-to-b from-gray-400/50 to-gray-300/60 border-2 border-gray-400 rounded-t"></div>
+                {/* Tapa */}
+                <div className="absolute -top-1 left-1/2 transform -translate-x-1/2 w-6 h-2 bg-gray-500 rounded-t-sm"></div>
+                
+                {/* Nivel de líquido con efecto de onda */}
+                {state.ESTADO === 'LLENANDO' && (
+                  <div 
+                    className="absolute bottom-0 w-16 bg-gradient-to-t from-blue-500 to-blue-300 transition-all duration-300 rounded-b-xl overflow-hidden"
+                    style={{ height: `${Math.min((state.PULSOS / state.META) * 80, 80)}px` }}
+                  >
+                    <div className="absolute top-0 w-full h-1 bg-blue-200 animate-pulse"></div>
+                  </div>
+                )}
+                
+                {state.ESTADO === 'BOTELLA_LLENA' && (
+                  <div className="absolute bottom-0 w-16 h-20 bg-gradient-to-t from-blue-500 to-blue-300 rounded-b-xl">
+                    <div className="absolute top-0 w-full h-1 bg-blue-200"></div>
+                  </div>
+                )}
+
+                {/* Brillo en la botella */}
+                <div className="absolute top-6 left-2 w-2 h-8 bg-white/30 rounded-full blur-sm"></div>
+              </div>
+            ) : (
+              // Botella normal en la cinta
+              <div className="relative w-10 h-16">
+                <div className="absolute bottom-0 w-10 h-14 bg-gradient-to-b from-gray-200/40 to-gray-300/60 border-2 border-gray-400 rounded-b-lg backdrop-blur-sm"></div>
+                <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-3 h-4 bg-gradient-to-b from-gray-400/50 to-gray-300/60 border-2 border-gray-400 rounded-t"></div>
+                <div className="absolute top-5 left-1 w-1.5 h-6 bg-white/20 rounded-full blur-sm"></div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* LEDs indicadores */}
+        <div className="absolute right-8 top-8 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className={`w-8 h-8 rounded-full ${state.L_VERDE === 1 ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-gray-700'} transition-all`}></div>
+            <span className="text-xs text-gray-400">LED Verde</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className={`w-8 h-8 rounded-full ${state.L_ROJO === 1 ? 'bg-red-500 shadow-lg shadow-red-500/50' : 'bg-gray-700'} transition-all`}></div>
+            <span className="text-xs text-gray-400">LED Rojo</span>
+          </div>
+        </div>
+
+        {/* Botón de emergencia */}
+        <div className="absolute right-8 bottom-8">
+          <div className={`w-16 h-16 rounded-full border-4 ${
+            state.S_EMERG === 0 ? 'border-red-600 bg-red-600' : 'border-gray-600 bg-gray-800'
+          } flex items-center justify-center transition-all`}>
+            <span className="text-2xl">{state.S_EMERG === 0 ? '🚨' : '🔴'}</span>
+          </div>
+          <div className="text-xs text-gray-400 text-center mt-2">EMERGENCIA</div>
+        </div>
+
+        {/* Estado actual overlay */}
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-gray-900/90 px-6 py-3 rounded-lg border border-gray-700">
+          <div className="text-center">
+            <div className="text-xs text-gray-400">Estado</div>
+            <div className="text-lg font-bold text-white">{state.ESTADO}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Componente: Control Button
  */
 function ControlButton({ 
@@ -363,6 +522,11 @@ export default function Dashboard() {
         {/* Status Card */}
         <div className="mb-6">
           <StatusCard estado={state.ESTADO} />
+        </div>
+
+        {/* Simulación de la Máquina */}
+        <div className="mb-6">
+          <MachineSimulation state={state} />
         </div>
 
         {/* Progress Bar - Solo visible durante llenado */}

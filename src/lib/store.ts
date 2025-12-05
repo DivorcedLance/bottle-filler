@@ -10,6 +10,10 @@ export interface MachineState {
   TANQUE: number;
   S_BOTELLA: number;
   S_EMERG: number;
+  M_CINTA: number;
+  M_BOMBA: number;
+  L_VERDE: number;
+  L_ROJO: number;
 }
 
 /**
@@ -35,7 +39,11 @@ const initialMachineState: MachineState = {
   META: 0,
   TANQUE: 100,
   S_BOTELLA: 0,
-  S_EMERG: 0
+  S_EMERG: 0,
+  M_CINTA: 0,
+  M_BOMBA: 0,
+  L_VERDE: 0,
+  L_ROJO: 0
 };
 
 /**

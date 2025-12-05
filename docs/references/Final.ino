@@ -13,23 +13,19 @@ const int PIN_BOMBA_IN4 = 13;
 const int PIN_LED_VERDE = A1;
 const int PIN_LED_ROJO = A2;
 
-// --- VARIABLES DE ESTADO ---
+// --- VARIABLES ---
 volatile int pulsosFlujo = 0;
 volatile bool flagNuevoPulso = false;
 volatile bool permitirConteo = false;
-
 long distanciaTanque = 0;
-
-// [CAMBIO CLAVE 1] El sistema nace ACTIVO. No espera a Python.
 bool sistemaActivo = true; 
 String estadoActual = "INICIANDO"; 
-String estadoAnterior = ""; // Para la lógica de RESUME
+String estadoAnterior = "";
 String comandoInput = "";
-
 int cantidadMeta = 20; 
 
 void setup() {
-  Serial.begin(9600); // Iniciamos comunicación, pero no bloqueamos esperando conexión
+  Serial.begin(9600); 
   
   pinMode(PIN_CINTA_ENA, OUTPUT); pinMode(PIN_CINTA_IN1, OUTPUT); pinMode(PIN_CINTA_IN2, OUTPUT);
   pinMode(PIN_BOMBA_ENB, OUTPUT); pinMode(PIN_BOMBA_IN3, OUTPUT); pinMode(PIN_BOMBA_IN4, OUTPUT);
@@ -40,12 +36,8 @@ void setup() {
   pinMode(PIN_SENSOR_FLUJO, INPUT_PULLUP);
   
   attachInterrupt(digitalPinToInterrupt(PIN_SENSOR_FLUJO), isrContarPulso, RISING);
-
-  // Prendemos LEDs para indicar arranque
-  digitalWrite(PIN_LED_VERDE, HIGH); digitalWrite(PIN_LED_ROJO, LOW);
   
-  // [CAMBIO CLAVE 2] Lógica de arranque inmediato
-  // Verificamos si ya hay una botella puesta al encender
+  // Arranque seguro
   if (digitalRead(PIN_SENSOR_BOTELLA) == HIGH) {
       estadoActual = "BOTELLA_DETECTADA";
       pararCinta();
@@ -53,49 +45,34 @@ void setup() {
   } else {
       estadoActual = "BUSCANDO_BOTELLA";
       digitalWrite(PIN_LED_VERDE, HIGH); digitalWrite(PIN_LED_ROJO, LOW);
-      moverCinta(); // ¡Arranca la cinta de una vez!
+      moverCinta(); 
   }
   
   reportarEstado(); 
 }
 
 void loop() {
-  // 1. Siempre escuchamos (Serial y Botón) sin bloquear
   verificarEntradas();
 
-  // 2. Si nos han pausado (STOP) o hay emergencia, no hacemos nada más
-  if (!sistemaActivo || estadoActual == "EMERGENCIA_STOP" || estadoActual == "PAUSA_REMOTA") {
-      return;
-  }
+  if (!sistemaActivo || estadoActual == "EMERGENCIA_STOP" || estadoActual == "PAUSA_REMOTA") return;
 
-  // --- MÁQUINA DE ESTADOS AUTOMÁTICA ---
-  
-  // CASO A: Estamos buscando botella (Cinta moviéndose)
+  // --- LÓGICA AUTOMÁTICA ---
   if (estadoActual == "BUSCANDO_BOTELLA") {
-      // Nos aseguramos que la cinta se mueva (por si venimos de un Resume)
       moverCinta(); 
       digitalWrite(PIN_LED_VERDE, HIGH); digitalWrite(PIN_LED_ROJO, LOW);
       
       if (digitalRead(PIN_SENSOR_BOTELLA) == HIGH) {
-          // ¡Botella encontrada!
           pararCinta();
           digitalWrite(PIN_LED_VERDE, LOW); digitalWrite(PIN_LED_ROJO, HIGH);
-          
           estadoActual = "BOTELLA_DETECTADA";
           reportarEstado();
-          delay(1000); // Tiempo para estabilizar botella
-          
-          // Preparamos llenado
+          delay(1000);
           pulsosFlujo = 0; 
           estadoActual = "LLENANDO"; 
       }
   }
-  
-  // CASO B: Llenado
   else if (estadoActual == "LLENANDO") {
       llenarBotella(); 
-      
-      // Si salimos de la función y seguimos activos, es que terminó bien
       if (sistemaActivo) {
           estadoActual = "BOTELLA_LLENA";
           reportarEstado();
@@ -103,43 +80,30 @@ void loop() {
           estadoActual = "TRANSPORTANDO";
       }
   }
-
-  // CASO C: Sacar la botella
   else if (estadoActual == "TRANSPORTANDO") {
       reportarEstado();
       digitalWrite(PIN_LED_VERDE, HIGH); digitalWrite(PIN_LED_ROJO, LOW);
       moverCinta();
-
-      // Esperamos a que la botella se vaya
       while(digitalRead(PIN_SENSOR_BOTELLA) == HIGH) {
          verificarEntradas(); 
-         if(!sistemaActivo) return; // Si pausan, salimos inmediatamente
+         if(!sistemaActivo) return; 
          delay(50);
       }
-      
-      // Ya se fue, volvemos a buscar
       estadoActual = "BUSCANDO_BOTELLA";
       reportarEstado();
   }
 
-  // --- REPORTE PERIÓDICO (HEARTBEAT) ---
-  // Esto manda datos a Python aunque Python no haya preguntado nada
   static unsigned long lastMedicion = 0;
   if (millis() - lastMedicion > 1000) {
     medirNivelTanque();
-    // Reportamos si estamos esperando o pausados, para mantener el dashboard vivo
-    if(estadoActual == "BUSCANDO_BOTELLA" || estadoActual == "PAUSA_REMOTA" || estadoActual == "EMERGENCIA_STOP") {
-        reportarEstado(); 
-    }
+    // Reportamos siempre para mantener el dashboard actualizado
+    if(estadoActual == "BUSCANDO_BOTELLA" || estadoActual == "PAUSA_REMOTA") reportarEstado(); 
     lastMedicion = millis();
   }
 }
 
-// --- GESTIÓN DE ENTRADAS ---
 void verificarEntradas() {
     escucharSerial(); 
-    
-    // Botón Físico de Emergencia
     if (digitalRead(PIN_EMERGENCIA) == LOW) {
         if (estadoActual != "EMERGENCIA_STOP") {
             estadoAnterior = estadoActual; 
@@ -148,7 +112,7 @@ void verificarEntradas() {
             sistemaActivo = false;
             digitalWrite(PIN_LED_ROJO, HIGH);
             reportarEstado();
-            while(digitalRead(PIN_EMERGENCIA) == LOW); // Anti-rebote
+            while(digitalRead(PIN_EMERGENCIA) == LOW); 
         }
     }
 }
@@ -156,134 +120,101 @@ void verificarEntradas() {
 void escucharSerial() {
   while (Serial.available()) {
     char c = (char)Serial.read();
-    if (c == '\n') {
-      procesarComando(comandoInput);
-      comandoInput = "";
-    } else {
-      comandoInput += c;
-    }
+    if (c == '\n') { procesarComando(comandoInput); comandoInput = ""; } 
+    else { comandoInput += c; }
   }
 }
 
 void procesarComando(String cmd) {
   cmd.trim(); 
   
-  // --- STOP ---
+  // --- COMANDOS DE SISTEMA ---
   if (cmd == "CMD:STOP") { 
-      if (sistemaActivo) {
-          estadoAnterior = estadoActual; // Guardamos dónde estábamos
-      }
-      sistemaActivo = false; 
-      detenerTodo(); 
-      permitirConteo = false;
-      estadoActual = "PAUSA_REMOTA";
-      reportarEstado();
+      if (sistemaActivo) estadoAnterior = estadoActual; 
+      sistemaActivo = false; detenerTodo(); permitirConteo = false;
+      estadoActual = "PAUSA_REMOTA"; reportarEstado();
   }
-  
-  // --- START (Reinicio total) ---
   else if (cmd == "CMD:START") { 
-      sistemaActivo = true; 
-      pulsosFlujo = 0; 
-      // Lógica inteligente: Si ya hay botella, no arranques la cinta a lo loco
-      if (digitalRead(PIN_SENSOR_BOTELLA) == HIGH) {
-          estadoActual = "BOTELLA_DETECTADA"; // Irá a llenar en el siguiente loop
-      } else {
-          estadoActual = "BUSCANDO_BOTELLA"; 
-          moverCinta();
-      }
+      sistemaActivo = true; pulsosFlujo = 0; 
+      if (digitalRead(PIN_SENSOR_BOTELLA) == HIGH) estadoActual = "BOTELLA_DETECTADA"; 
+      else { estadoActual = "BUSCANDO_BOTELLA"; moverCinta(); }
       reportarEstado();
   }
-
-  // --- RESUME (Continuar donde estaba) ---
   else if (cmd == "CMD:RESUME") {
       if (!sistemaActivo) { 
-          sistemaActivo = true;
-          estadoActual = estadoAnterior; 
-          reportarEstado();
-          
-          if (estadoActual == "LLENANDO") {
-              permitirConteo = true; // Bomba arranca sola en el loop
-          } 
-          else if (estadoActual == "BUSCANDO_BOTELLA" || estadoActual == "TRANSPORTANDO") {
-              moverCinta();
-          }
+          sistemaActivo = true; estadoActual = estadoAnterior; reportarEstado();
+          if (estadoActual == "LLENANDO") permitirConteo = true; 
+          else if (estadoActual == "BUSCANDO_BOTELLA" || estadoActual == "TRANSPORTANDO") moverCinta();
       }
   }
   
-  // --- TESTS (Solo funcionan si la máquina no está trabajando) ---
-  // He añadido protección para que no interrumpan el llenado automático
-  else if (cmd == "CMD:TEST_BOMBA") {
-      if (estadoActual != "LLENANDO") { 
-          String prev = estadoActual;
-          estadoActual = "TEST_BOMBA"; reportarEstado();
-          pararCinta();
-          digitalWrite(PIN_BOMBA_IN3, HIGH); digitalWrite(PIN_BOMBA_IN4, LOW); analogWrite(PIN_BOMBA_ENB, 200);
-          delay(1500);
-          digitalWrite(PIN_BOMBA_IN3, LOW); digitalWrite(PIN_BOMBA_IN4, LOW); analogWrite(PIN_BOMBA_ENB, 0);
-          estadoActual = prev;
-          if(estadoActual == "BUSCANDO_BOTELLA") moverCinta();
+  // --- CONTROL MANUAL DE ACTUADORES (NUEVO) ---
+  // Formato: CMD:MANUAL_CINTA:1 (ON) o CMD:MANUAL_CINTA:0 (OFF)
+  else if (cmd.startsWith("CMD:MANUAL_")) {
+      // Solo permitimos manual si NO está en un proceso crítico automático
+      bool seguroParaManual = (estadoActual == "PAUSA_REMOTA" || estadoActual == "BUSCANDO_BOTELLA" || estadoActual == "INICIANDO");
+      
+      if (seguroParaManual) {
+          int val = cmd.substring(cmd.lastIndexOf(':') + 1).toInt();
+          
+          if (cmd.startsWith("CMD:MANUAL_CINTA")) {
+              if (val == 1) moverCinta(); else pararCinta();
+          }
+          else if (cmd.startsWith("CMD:MANUAL_BOMBA")) {
+               if (val == 1) { 
+                   digitalWrite(PIN_BOMBA_IN3, HIGH); digitalWrite(PIN_BOMBA_IN4, LOW); analogWrite(PIN_BOMBA_ENB, 255); 
+               } else { 
+                   digitalWrite(PIN_BOMBA_IN3, LOW); digitalWrite(PIN_BOMBA_IN4, LOW); analogWrite(PIN_BOMBA_ENB, 0); 
+               }
+          }
+          else if (cmd.startsWith("CMD:MANUAL_LED_G")) {
+               digitalWrite(PIN_LED_VERDE, val);
+          }
+          else if (cmd.startsWith("CMD:MANUAL_LED_R")) {
+               digitalWrite(PIN_LED_ROJO, val);
+          }
           reportarEstado();
       }
   }
-  else if (cmd == "CMD:TEST_CINTA") {
-      if (estadoActual != "LLENANDO") {
-          String prev = estadoActual;
-          estadoActual = "TEST_CINTA"; reportarEstado();
-          moverCinta();
-          delay(1500);
-          pararCinta();
-          estadoActual = prev;
-          if(estadoActual == "BUSCANDO_BOTELLA") moverCinta();
-          reportarEstado();
-      }
-  }
+
+  // --- CONFIGURACIÓN ---
   else if (cmd.startsWith("CMD:SET_META:")) {
-      String valorStr = cmd.substring(13);
-      int nuevoValor = valorStr.toInt();
-      if (nuevoValor > 0) cantidadMeta = nuevoValor;
+      cantidadMeta = cmd.substring(13).toInt();
   }
 }
 
-// --- FUNCIÓN DE REPORTE COMPLETO ---
 void reportarEstado() {
-  // Enviamos JSON aunque nadie escuche. Serial es asíncrono.
   Serial.print("{");
   Serial.print("\"ESTADO\":\"" + estadoActual + "\",");
   Serial.print("\"PULSOS\":" + String(pulsosFlujo) + ",");
   Serial.print("\"META\":" + String(cantidadMeta) + ",");
   Serial.print("\"TANQUE\":" + String(distanciaTanque) + ",");
+  
+  // Sensores
   Serial.print("\"S_BOTELLA\":" + String(digitalRead(PIN_SENSOR_BOTELLA)) + ",");
-  Serial.print("\"S_EMERG\":" + String(digitalRead(PIN_EMERGENCIA))); 
+  Serial.print("\"S_EMERG\":" + String(digitalRead(PIN_EMERGENCIA)) + ",");
+  
+  // [NUEVO] Estado real de Actuadores
+  // Para la cinta/bomba leemos el pin de habilitación o dirección
+  Serial.print("\"M_CINTA\":" + String(digitalRead(PIN_CINTA_IN1)) + ","); 
+  Serial.print("\"M_BOMBA\":" + String(digitalRead(PIN_BOMBA_IN3)) + ",");
+  Serial.print("\"L_VERDE\":" + String(digitalRead(PIN_LED_VERDE)) + ",");
+  Serial.print("\"L_ROJO\":" + String(digitalRead(PIN_LED_ROJO)));
+  
   Serial.println("}");
 }
 
-// --- LÓGICA DE LLENADO ---
 void llenarBotella() {
-  permitirConteo = true; 
-  reportarEstado();
-  
+  permitirConteo = true; reportarEstado();
   digitalWrite(PIN_BOMBA_IN3, HIGH); digitalWrite(PIN_BOMBA_IN4, LOW); analogWrite(PIN_BOMBA_ENB, 255);
-  
   while (pulsosFlujo < cantidadMeta) { 
-    verificarEntradas(); // Permite pausar a mitad de llenado
-    
-    if (!sistemaActivo) { 
-        detenerTodo(); 
-        permitirConteo = false; 
-        return; 
-    }
-    
-    if (flagNuevoPulso) {
-      reportarEstado();
-      flagNuevoPulso = false; 
-    }
+    verificarEntradas(); 
+    if (!sistemaActivo) { detenerTodo(); permitirConteo = false; return; }
+    if (flagNuevoPulso) { reportarEstado(); flagNuevoPulso = false; }
   }
-  
-  digitalWrite(PIN_BOMBA_IN3, LOW); digitalWrite(PIN_BOMBA_IN4, LOW); analogWrite(PIN_BOMBA_ENB, 0);
-  permitirConteo = false; 
+  detenerTodo(); permitirConteo = false; 
 }
 
-// Funciones auxiliares
 void isrContarPulso() { if (permitirConteo) { pulsosFlujo++; flagNuevoPulso = true; } }
 void medirNivelTanque() { digitalWrite(PIN_TRIG, LOW); delayMicroseconds(2); digitalWrite(PIN_TRIG, HIGH); delayMicroseconds(10); digitalWrite(PIN_TRIG, LOW); long dur = pulseIn(PIN_ECHO, HIGH); distanciaTanque = dur * 0.034 / 2; }
 void moverCinta() { digitalWrite(PIN_CINTA_IN1, HIGH); digitalWrite(PIN_CINTA_IN2, LOW); analogWrite(PIN_CINTA_ENA, 255); }

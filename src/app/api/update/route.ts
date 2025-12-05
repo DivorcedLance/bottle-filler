@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     // Validar que el body contenga todos los campos requeridos
-    const requiredFields = ['ESTADO', 'PULSOS', 'META', 'TANQUE', 'S_BOTELLA', 'S_EMERG'];
+    const requiredFields = ['ESTADO', 'PULSOS', 'META', 'TANQUE', 'S_BOTELLA', 'S_EMERG', 'M_CINTA', 'M_BOMBA', 'L_VERDE', 'L_ROJO'];
     const missingFields = requiredFields.filter(field => !(field in body));
     
     if (missingFields.length > 0) {
@@ -31,7 +31,11 @@ export async function POST(request: NextRequest) {
       typeof body.META !== 'number' ||
       typeof body.TANQUE !== 'number' ||
       typeof body.S_BOTELLA !== 'number' ||
-      typeof body.S_EMERG !== 'number'
+      typeof body.S_EMERG !== 'number' ||
+      typeof body.M_CINTA !== 'number' ||
+      typeof body.M_BOMBA !== 'number' ||
+      typeof body.L_VERDE !== 'number' ||
+      typeof body.L_ROJO !== 'number'
     ) {
       return NextResponse.json(
         { 
@@ -48,7 +52,11 @@ export async function POST(request: NextRequest) {
       META: body.META,
       TANQUE: body.TANQUE,
       S_BOTELLA: body.S_BOTELLA,
-      S_EMERG: body.S_EMERG
+      S_EMERG: body.S_EMERG,
+      M_CINTA: body.M_CINTA,
+      M_BOMBA: body.M_BOMBA,
+      L_VERDE: body.L_VERDE,
+      L_ROJO: body.L_ROJO
     };
 
     // Actualizar el store del servidor

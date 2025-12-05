@@ -8,13 +8,12 @@ from datetime import datetime
 # --- CONFIGURACIÓN ---
 SERIAL_PORT = 'COM7'       
 BAUD_RATE = 9600
-# API_URL = "https://prohect.vercel.app/api"
-API_URL = "http://localhost:3000/api"
+API_URL = "http://localhost:8080/api" 
+# API_URL = "http://bottle-filler.vercel.app/api" 
 
-# Variables globales compartidas
 ser = None
 running = True
-ultimo_estado_json = {} # Aquí guardamos lo último que dijo el Arduino
+ultimo_estado_json = {} 
 
 def conectar_arduino():
     global ser
@@ -26,7 +25,29 @@ def conectar_arduino():
         print(f"❌ Error conectando a Arduino: {e}")
         return False
 
-# --- HILO 1: ESCUCHAR ARDUINO (Igual que antes pero guarda en variable) ---
+# --- VISUALIZACIÓN EN CONSOLA ---
+def mostrar_dashboard(datos):
+    ahora = datetime.now().strftime("%H:%M:%S")
+    print("\n" + "="*60)
+    print(f" 🏭 ESTADO PLANTA - {ahora}")
+    print("="*60)
+    
+    print(f" ➤ ESTADO:    {datos.get('ESTADO', '---')}")
+    print(f" ➤ PROGRESO:  {datos.get('PULSOS', 0)} / {datos.get('META', 0)} pulsos")
+    print(f" ➤ TANQUE:    {datos.get('TANQUE', 0)} cm")
+    
+    # Visualización de booleanos (1/0)
+    def on_off(val): return "🟢 ON" if int(val) == 1 else "🔴 OFF"
+    
+    print("-" * 30)
+    print(" 🔧 ACTUADORES & SENSORES")
+    print(f" [M] CINTA: {on_off(datos.get('M_CINTA', 0))}    |  [S] BOTELLA: {on_off(datos.get('S_BOTELLA', 0))}")
+    print(f" [M] BOMBA: {on_off(datos.get('M_BOMBA', 0))}    |  [S] EMERG:   {'🚨' if int(datos.get('S_EMERG', 1))==0 else '✅ OK'}")
+    print(f" [L] VERDE: {on_off(datos.get('L_VERDE', 0))}    |  [L] ROJO:    {on_off(datos.get('L_ROJO', 0))}")
+    print("="*60)
+    print(" Comandos: START, STOP, RESUME, META 50, CINTA ON, BOMBA OFF...")
+
+# --- HILO 1: ESCUCHAR ARDUINO ---
 def escuchar_arduino():
     global ultimo_estado_json
     buffer = ""
@@ -39,10 +60,8 @@ def escuchar_arduino():
                         linea = buffer.strip()
                         if linea.startswith("{") and linea.endswith("}"):
                             try:
-                                # Guardamos el JSON en memoria para enviarlo luego
                                 ultimo_estado_json = json.loads(linea)
-                                # Opcional: Imprimir en consola local para debug
-                                print(f"[ARDUINO]: {linea}") 
+                                mostrar_dashboard(ultimo_estado_json) # Actualiza consola
                             except: pass
                         buffer = ""
                     else:
@@ -50,77 +69,58 @@ def escuchar_arduino():
             except: pass
         time.sleep(0.001)
 
-# --- HILO 2: SINCRONIZACIÓN CON VERCEL (NUBE) ---
+# --- HILO 2: NUBE (Igual que antes) ---
 def hilo_nube():
     while running:
-        # 1. ENVIAR DATOS (POST)
         if ultimo_estado_json:
             try:
-                # Enviamos el JSON tal cual viene del Arduino al endpoint /update
                 requests.post(f"{API_URL}/update", json=ultimo_estado_json, timeout=2)
-                # print("☁️ Datos subidos a Vercel") 
-            except Exception as e:
-                print(f"⚠️ Error subiendo datos: {e}")
+            except: pass
 
-        # 2. RECIBIR ÓRDENES (GET)
         try:
-            # Consultamos si hay comandos pendientes en la cola
             resp = requests.get(f"{API_URL}/commands", timeout=2)
             if resp.status_code == 200:
                 data = resp.json()
-                comando_nube = data.get("command") # Esperamos {"command": "CMD:STOP"}
-                
-                if comando_nube:
-                    print(f"📥 COMANDO RECIBIDO DE LA NUBE: {comando_nube}")
-                    enviar_comando_arduino(comando_nube)
-        except Exception as e:
-            print(f"⚠️ Error consultando comandos: {e}")
-
-        # Esperamos 2 segundos para no saturar tu servidor ni el Arduino
+                cmd = data.get("command")
+                if cmd:
+                    print(f"📥 NUBE: {cmd}")
+                    enviar_raw(cmd)
+        except: pass
         time.sleep(2)
 
-def enviar_comando_arduino(cmd):
+def enviar_raw(cmd):
     if ser and ser.is_open:
-        msg = cmd.strip() + "\n"
-        ser.write(msg.encode('utf-8'))
+        ser.write((cmd.strip() + "\n").encode('utf-8'))
 
-# --- MAIN: CONTROL LOCAL ---
+# --- MAIN ---
 if __name__ == "__main__":
-    print("--- GATEWAY IOT INICIADO ---")
     if conectar_arduino():
-        # Iniciamos hilos en segundo plano
-        t_serial = threading.Thread(target=escuchar_arduino)
-        t_serial.daemon = True
-        t_serial.start()
-
-        t_nube = threading.Thread(target=hilo_nube)
-        t_nube.daemon = True
-        t_nube.start()
-
-        print(f"📡 Conectando a backend: {API_URL}")
-        print("⌨️  Control Local habilitado (Escribe comandos aquí)...")
+        threading.Thread(target=escuchar_arduino, daemon=True).start()
+        threading.Thread(target=hilo_nube, daemon=True).start()
 
         try:
             while True:
-                # El input bloquea, por eso usamos hilos para lo demás
-                entrada = input() 
-                cmd = entrada.strip().upper()
-                
-                # Mapeo rápido de comandos locales
+                entrada = input().strip().upper()
                 msg = ""
-                if cmd == "SALIR": break
-                elif cmd == "START": msg = "CMD:START"
-                elif cmd == "STOP": msg = "CMD:STOP"
-                elif cmd == "RESUME": msg = "CMD:RESUME"
-                elif "TEST" in cmd: msg = f"CMD:{cmd}" # CMD:TEST_BOMBA
-                elif "META" in cmd: msg = f"CMD:SET_META:{cmd.split()[-1]}"
                 
-                if msg:
-                    enviar_comando_arduino(msg)
-                    print(f"➡️ Enviado localmente: {msg}")
-
-        except KeyboardInterrupt:
-            print("\nApagando...")
-        finally:
+                if entrada == "SALIR": break
+                elif entrada == "START": msg = "CMD:START"
+                elif entrada == "STOP": msg = "CMD:STOP"
+                elif entrada == "RESUME": msg = "CMD:RESUME"
+                
+                # Comandos Manuales Locales
+                elif "CINTA ON" in entrada: msg = "CMD:MANUAL_CINTA:1"
+                elif "CINTA OFF" in entrada: msg = "CMD:MANUAL_CINTA:0"
+                elif "BOMBA ON" in entrada: msg = "CMD:MANUAL_BOMBA:1"
+                elif "BOMBA OFF" in entrada: msg = "CMD:MANUAL_BOMBA:0"
+                elif "VERDE ON" in entrada: msg = "CMD:MANUAL_LED_G:1"
+                elif "VERDE OFF" in entrada: msg = "CMD:MANUAL_LED_G:0"
+                
+                elif "META" in entrada: msg = f"CMD:SET_META:{entrada.split()[-1]}"
+                
+                if msg: enviar_raw(msg)
+                
+        except KeyboardInterrupt: pass
+        finally: 
             running = False
             ser.close()

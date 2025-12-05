@@ -19,7 +19,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validCommands = ['START', 'STOP', 'RESUME', 'TEST_BOMBA', 'TEST_CINTA'];
+    const validCommands = ['START', 'STOP', 'RESUME'];
+    const validManualCommands = ['MANUAL_CINTA', 'MANUAL_BOMBA', 'MANUAL_LED_G', 'MANUAL_LED_R'];
     let command = body.command.toUpperCase();
 
     // Verificar si es un comando SET_META
@@ -48,18 +49,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!validCommands.includes(command)) {
+    // Verificar si es comando manual (formato: MANUAL_CINTA:1 o MANUAL_BOMBA:0)
+    let fullCommand = '';
+    const manualMatch = command.match(/^(MANUAL_[A-Z_]+):(0|1)$/);
+    if (manualMatch) {
+      const [, manualCmd, value] = manualMatch;
+      if (!validManualCommands.includes(manualCmd)) {
+        return NextResponse.json(
+          { success: false, error: `Comando manual no válido: ${manualCmd}` },
+          { status: 400 }
+        );
+      }
+      fullCommand = `CMD:${manualCmd}:${value}`;
+    } else if (validCommands.includes(command)) {
+      fullCommand = `CMD:${command}`;
+    } else {
       return NextResponse.json(
         { 
           success: false, 
-          error: `Comando no válido. Comandos permitidos: ${validCommands.join(', ')}, SET_META:<valor>` 
+          error: `Comando no válido. Comandos: ${validCommands.join(', ')}, ${validManualCommands.map(c => c + ':0/1').join(', ')}, SET_META:<valor>` 
         },
         { status: 400 }
       );
     }
 
-    // Agregar prefijo CMD: para el Arduino
-    const fullCommand = `CMD:${command}`;
     useServerStore.getState().addCommand(fullCommand);
 
     return NextResponse.json(
